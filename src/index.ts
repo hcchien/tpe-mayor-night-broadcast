@@ -147,9 +147,10 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     const result = await env.DB.batch([
       env.DB.prepare('INSERT INTO audit_log(id,actor,action,target_id,detail,created_at) SELECT ?,?,?,?,?,? FROM venues WHERE id=? AND version=?')
         .bind(crypto.randomUUID(),actor,'venue:delete',id,'{}',now(),id,data.version),
-      env.DB.prepare('DELETE FROM venues WHERE id=? AND version=?').bind(id,data.version)
+      env.DB.prepare('DELETE FROM venues WHERE id=? AND version=? RETURNING id').bind(id,data.version)
     ]);
-    if (result[1].meta.changes !== 1) throw new HttpError(409,'資料已被修改或刪除，請重新載入。');
+    // D1 changes includes cascaded report deletions; RETURNING identifies the one target venue.
+    if (result[1].results.length !== 1) throw new HttpError(409,'資料已被修改或刪除，請重新載入。');
     return json({ message:'場地與聯絡資料已刪除；公開快取最多保留 30 秒。' });
   }
   if (path === '/api/admin/reports' && req.method === 'GET') {
