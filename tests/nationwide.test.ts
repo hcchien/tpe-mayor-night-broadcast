@@ -19,7 +19,7 @@ test('nationwide migration preserves existing venue content and defaults its cit
   const db=new DatabaseSync(':memory:');
   try {
     for(const file of ['0001_initial.sql','0002_merchant_google_auth.sql','0003_admin_google_login.sql'])db.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
-    const {city,...oldVenue}=venue;
+    const {city,events,...oldVenue}=venue;
     const fields={...oldVenue,accessible:1,id:'existing-venue',consent_version:'existing',created_at:'2026-11-26',updated_at:'2026-11-26'};
     db.prepare(`INSERT INTO venues(${Object.keys(fields).join(',')}) VALUES(${Object.keys(fields).map(()=>'?').join(',')})`).run(...Object.values(fields));
     db.exec(readFileSync(new URL('../migrations/0004_nationwide_venues.sql',import.meta.url),'utf8'));

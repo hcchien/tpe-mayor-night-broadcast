@@ -1,4 +1,4 @@
-import { $, el, api, externalLink, options, venueFields, readVenue, showError, challenge, locationSelects } from './shared.js';
+import { $, el, api, externalLink, options, venueFields, readVenue, showError, challenge, locationSelects, eventLabels } from './shared.js';
 let config;let registerChallenge;let reportChallenge;let reportVenueId='';let currentPage=1;let requestNumber=0;
 let merchant=null;let refreshSearchDistrict;
 const authMessage=$('#merchant-message');
@@ -23,7 +23,7 @@ function updateMerchantUI(){
 const glyphs={'餐廳':'♨','咖啡廳':'☕','酒吧':'◒','共享空間':'▦','其他場地':'⌂'};
 function card(venue) {
   const map = 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(venue.address);
-  const details = el('div',{class:'venue-details'},el('p',{},'開放時間｜'+venue.opening_time),el('p',{},'消費方式｜'+venue.cost));
+  const details = el('div',{class:'venue-details'},el('p',{},'參與活動｜'+eventLabels(config,venue.events)),el('p',{},'開放時間｜'+venue.opening_time),el('p',{},'消費方式｜'+venue.cost));
   if (venue.accessible) details.append(el('p',{},'✓ 店家提供無階梯入口（細節請先確認）'));
   const share = el('button',{type:'button',class:'link-button',onClick:async()=>{
     const url=new URL(location.origin);url.searchParams.set('q',venue.name);
@@ -43,7 +43,7 @@ function card(venue) {
 async function loadVenues(page=1) {
   currentPage=page;const seq=++requestNumber;const fd=new FormData($('#search-form'));
   const params=new URLSearchParams({page:String(page)});
-  for(const key of ['q','city','district','category'])if(fd.get(key))params.set(key,String(fd.get(key)).trim());
+  for(const key of ['q','city','district','category','event'])if(fd.get(key))params.set(key,String(fd.get(key)).trim());
   if(fd.has('accessible'))params.set('accessible','1');
   const shareParams=new URLSearchParams(params);shareParams.delete('page');history.replaceState(null,'',`${location.pathname}${shareParams.size?'?'+shareParams:''}${location.hash}`);
   $('#directory-message').replaceChildren(el('p',{class:'subtle'},'正在尋找一起看的地方…'));$('#venue-grid').setAttribute('aria-busy','true');
@@ -82,8 +82,8 @@ $('#register-form').addEventListener('submit',async e=>{
 async function init(){
   await loadVenuesFromUrl();
   try{
-    config=await api('/api/config');options($('#city-filter'),config.cities);options($('#category-filter'),config.categories);
-    const params=new URLSearchParams(location.search);for(const key of ['city','category'])if(params.get(key))$('#search-form').elements[key].value=key==='city'?params.get(key).replace(/^台/,'臺'):params.get(key);
+    config=await api('/api/config');options($('#city-filter'),config.cities);options($('#category-filter'),config.categories);for(const event of config.eventOptions)$('#event-filter').append(el('option',{value:event.id},event.label));
+    const params=new URLSearchParams(location.search);for(const key of ['city','category','event'])if(params.get(key))$('#search-form').elements[key].value=key==='city'?params.get(key).replace(/^台/,'臺'):params.get(key);
     refreshSearchDistrict=locationSelects(config,$('#city-filter'),$('#district-filter'),{optional:true,selected:(params.get('district')||'').replace(/台/g,'臺')});
     $('#event-time').textContent=config.eventTime;$('#organizer').textContent=config.organizerName?`主辦／資料管理：${config.organizerName}`:'';
     if(config.contactEmail){$('#contact-link').hidden=false;$('#contact-link').href='mailto:'+encodeURIComponent(config.contactEmail);}

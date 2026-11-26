@@ -37,9 +37,20 @@ export function locationSelects(config, city, district, {optional=false, selecte
   city.addEventListener('change',()=>refresh());refresh(selected);
   return refresh;
 }
-export const fieldNames = { name:'店家／場地名稱', city:'縣市', district:'鄉鎮市區', category:'場地類型', address:'完整地址', capacity:'預計容納人數', screen:'螢幕與音響設備', opening_time:'當天開放時間', cost:'消費與入場方式', description:'場地介紹與參與須知', booking_url:'店家公開網站或預約連結', accessible:'提供無階梯入口', contact_name:'聯絡人姓名', contact_email:'聯絡 Email', contact_phone:'聯絡電話' };
+export function eventLabels(config, events) { return config.eventOptions.filter(option=>(events||[]).includes(option.id)).map(option=>option.label).join('、'); }
+export const fieldNames = { events:'參與活動', name:'店家／場地名稱', city:'縣市', district:'鄉鎮市區', category:'場地類型', address:'完整地址', capacity:'預計容納人數', screen:'螢幕與音響設備', opening_time:'當天開放時間', cost:'消費與入場方式', description:'場地介紹與參與須知', booking_url:'店家公開網站或預約連結', accessible:'提供無階梯入口', contact_name:'聯絡人姓名', contact_email:'聯絡 Email', contact_phone:'聯絡電話' };
 export function venueFields(config, value = {}, privateFields = false, prefix = '') {
   const grid = el('div',{class:'field-grid'});
+  if(!privateFields) {
+    const group=el('fieldset',{class:'wide event-choices'},el('legend',{},'參與活動 *（可複選）'));
+    const inputs=config.eventOptions.map(option=>{
+      const input=el('input',{type:'checkbox',name:'events',value:option.id,id:prefix+'event-'+option.id});input.checked=(value.events||[]).includes(option.id);
+      group.append(el('label',{class:'check'},input,option.label));return input;
+    });
+    const validate=()=>inputs[0].setCustomValidity(inputs.some(input=>input.checked)?'':'請至少選擇一場活動');
+    for(const input of inputs)input.addEventListener('change',validate);validate();
+    group.append(el('p',{class:'field-hint'},'可參與其中一晚或兩晚。若兩晚的開放時間、低消或預約方式不同，請在下方分別註明。'));grid.append(group);
+  }
   const specs = privateFields ? [
     ['contact_name','text',80,true],['contact_email','email',254,true],['contact_phone','tel',30,true]
   ] : [
@@ -72,12 +83,12 @@ export function venueFields(config, value = {}, privateFields = false, prefix = 
 }
 export function readVenue(form) {
   const fd = new FormData(form); const data = {};
-  for (const name of Object.keys(fieldNames)) data[name] = name === 'capacity' ? Number(fd.get(name)) : name === 'accessible' ? fd.has(name) : String(fd.get(name) || '').trim();
+  for (const name of Object.keys(fieldNames)) data[name] = name === 'events' ? fd.getAll('events') : name === 'capacity' ? Number(fd.get(name)) : name === 'accessible' ? fd.has(name) : String(fd.get(name) || '').trim();
   return data;
 }
 export function showError(node,error) {
   node.className='form-message error';
-  node.textContent=error.message + (error.fields?.length ? '\n'+error.fields.map(f => `${fieldNames[f.field.replace('venue.','')] || f.field}：${f.message}`).join('\n') : '');
+  node.textContent=error.message + (error.fields?.length ? '\n'+error.fields.map(f => `${fieldNames[f.field.replace('venue.','').split('.')[0]] || f.field}：${f.message}`).join('\n') : '');
 }
 let turnstileLoading;
 function loadTurnstile() {
