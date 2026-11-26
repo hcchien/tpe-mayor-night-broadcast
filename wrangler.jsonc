@@ -46,7 +46,7 @@
     "SITE_ORIGIN": "https://tpe-mayor.thecocoa.cool",
     "TURNSTILE_SITE_KEY": "0x4AAAAAAGUE62du4GLrFddS",
     "GOOGLE_CLIENT_ID": "448719938843-chctk3c8ur7ftvsnb3ebcjtdcq12hiri.apps.googleusercontent.com",
-    "REGISTRATION_OPEN": "false",
+    "REGISTRATION_OPEN": "true",
     "DAILY_SUBMISSION_LIMIT": "200",
     "EVENT_LABEL": "台北市長選前之夜",
     "EVENT_TIME": "活動時間與直播資訊將由主辦單位公布",
