@@ -74,7 +74,7 @@ test('complete Google code exchange issues an opaque session, prevents replay an
     turnstileSuccess=true;
     assert.equal((await request(env,'/api/venues','POST',{...submission,contact_email:'merchant@gmail.com'},session)).status,201);
     assert.equal((env.DB as any).sql.prepare('SELECT owner_google_sub FROM venues').get().owner_google_sub,'google-merchant-123');
-    assert.equal((await request(env,'/api/admin/venues','GET',undefined,session)).status,401);
+    assert.equal((await request(env,'/api/admin/venues','GET',undefined,session)).status,403);
     const replay=await request(env,'/api/auth/callback?state='+state+'&code=test-code','GET',undefined,browser);assert.match(replay.headers.get('Location')!,/login_error=failed/);assert.equal(exchanges,1);
     assert.equal((await request(env,'/api/auth/logout','POST',{},session,{Origin:'https://evil.example'})).status,403);
     const logout=await request(env,'/api/auth/logout','POST',{},session);assert.equal(logout.status,200);assert.match(logout.headers.get('Set-Cookie')!,/Max-Age=0/);
@@ -118,4 +118,13 @@ test('local login still uses a revocable session and expiry cleanup removes stat
   const again=await request(env,'/api/auth/login','POST',{},session);assert.notEqual(cookiePair(again,'night-session'),session);assert.equal((await (await request(env,'/api/auth/me','GET',undefined,session)).json() as any).user,null);
   env.PRIVACY_DELETE_AFTER='2000-01-01';await worker.scheduled({} as ScheduledController,env);
   assert.equal((env.DB as any).sql.prepare('SELECT COUNT(*) n FROM merchant_sessions').get().n,0);
+});
+
+test('admin login stays available when merchant registration is closed and stores its purpose server-side',async()=>{
+  const env=production();env.REGISTRATION_OPEN='false';
+  assert.equal((await request(env,'/api/auth/login','POST',{})).status,403);
+  const start=await request(env,'/api/auth/login','POST',{admin:true});assert.equal(start.status,200);
+  const authUrl=new URL((await start.json() as any).url);
+  const flow=await consumeOAuthState(new Request(env.SITE_ORIGIN+'/api/auth/callback?state='+authUrl.searchParams.get('state'),{headers:{Cookie:cookiePair(start,'__Host-night-oauth')}}),env);
+  assert.equal(flow.admin_login,1);
 });
