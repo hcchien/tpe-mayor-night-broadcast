@@ -34,7 +34,7 @@ function card(venue) {
   }},'分享給朋友 ↗');
   return el('article',{class:'venue-card'},
     el('div',{class:'card-top','data-category':venue.category},el('span',{class:'tag'},venue.category),el('span',{class:'category-glyph','aria-hidden':true},glyphs[venue.category]||'⌂')),
-    el('div',{class:'card-body'},el('span',{class:'eyebrow'},venue.district+' · 已查核'),el('h3',{},venue.name),el('p',{class:'card-address'},venue.address),
+    el('div',{class:'card-body'},el('span',{class:'eyebrow'},(venue.city||'')+venue.district+' · 已查核'),el('h3',{},venue.name),el('p',{class:'card-address'},venue.address),
       el('div',{class:'facts'},el('p',{},'空間容量',el('strong',{},`約 ${venue.capacity} 人`)),el('p',{},'播放設備',el('strong',{},venue.screen))),
       el('p',{class:'description'},venue.description),details,
       el('div',{class:'card-actions'},externalLink('查看地圖 ↗',map),externalLink('店家／預約 ↗',venue.booking_url,'button')),
@@ -43,14 +43,14 @@ function card(venue) {
 async function loadVenues(page=1) {
   currentPage=page;const seq=++requestNumber;const fd=new FormData($('#search-form'));
   const params=new URLSearchParams({page:String(page)});
-  for(const key of ['q','district','category'])if(fd.get(key))params.set(key,String(fd.get(key)).trim());
+  for(const key of ['q','city','district','category'])if(fd.get(key))params.set(key,String(fd.get(key)).trim());
   if(fd.has('accessible'))params.set('accessible','1');
   const shareParams=new URLSearchParams(params);shareParams.delete('page');history.replaceState(null,'',`${location.pathname}${shareParams.size?'?'+shareParams:''}${location.hash}`);
   $('#directory-message').replaceChildren(el('p',{class:'subtle'},'正在尋找一起看的地方…'));$('#venue-grid').setAttribute('aria-busy','true');
   try{
     const data=await api('/api/venues?'+params);if(seq!==requestNumber)return;
     $('#venue-count').textContent=`${data.total} 個聯播場地`;$('#venue-grid').replaceChildren(...data.venues.map(card));$('#directory-message').replaceChildren();
-    if(!data.venues.length)$('#directory-message').append(el('div',{class:'empty-state'},el('span',{class:'empty-icon','aria-hidden':true},'⌂'),el('h3',{},shareParams.size?'還沒找到符合的場地':'第一個相聚的地方，等你開門。'),el('p',{},shareParams.size?'試著選擇其他行政區、類型，或清除搜尋條件。':'場地正在招募與查核中。有螢幕、有空間的你，歡迎登記加入。'),el('a',{class:'button secondary',href:'#register'},'登記我的場地 ↗')));
+    if(!data.venues.length)$('#directory-message').append(el('div',{class:'empty-state'},el('span',{class:'empty-icon','aria-hidden':true},'⌂'),el('h3',{},shareParams.size?'還沒找到符合的場地':'第一個相聚的地方，等你開門。'),el('p',{},shareParams.size?'試著選擇其他縣市、鄉鎮市區或類型，或清除搜尋條件。':'場地正在招募與查核中。有螢幕、有空間的你，歡迎登記加入。'),el('a',{class:'button secondary',href:'#register'},'登記我的場地 ↗')));
     const pagination=$('#pagination');pagination.replaceChildren();const pages=Math.ceil(data.total/24);
     if(pages>1)pagination.append(el('button',{class:'button secondary',disabled:page===1,onClick:()=>loadVenues(page-1)},'上一頁'),el('span',{},`${page} / ${pages}`),el('button',{class:'button secondary',disabled:page===pages,onClick:()=>loadVenues(page+1)},'下一頁'));
   }catch(error){if(seq!==requestNumber)return;$('#venue-count').textContent='暫時無法載入';$('#venue-grid').replaceChildren();$('#pagination').replaceChildren();$('#directory-message').replaceChildren(el('div',{class:'empty-state'},el('h3',{},'場地資訊暫時無法載入'),el('p',{class:'error'},error.message),el('button',{class:'button secondary',onClick:()=>loadVenues(currentPage)},'重新載入')));}finally{if(seq===requestNumber)$('#venue-grid').removeAttribute('aria-busy');}
@@ -82,8 +82,8 @@ $('#register-form').addEventListener('submit',async e=>{
 async function init(){
   await loadVenuesFromUrl();
   try{
-    config=await api('/api/config');options($('#district-filter'),config.districts);options($('#category-filter'),config.categories);
-    const params=new URLSearchParams(location.search);for(const key of ['district','category'])if(params.get(key))$('#search-form').elements[key].value=params.get(key);
+    config=await api('/api/config');options($('#city-filter'),config.cities);options($('#category-filter'),config.categories);
+    const params=new URLSearchParams(location.search);for(const key of ['city','district','category'])if(params.get(key))$('#search-form').elements[key].value=params.get(key);
     $('#event-time').textContent=config.eventTime;$('#organizer').textContent=config.organizerName?`主辦／資料管理：${config.organizerName}`:'';
     if(config.contactEmail){$('#contact-link').hidden=false;$('#contact-link').href='mailto:'+encodeURIComponent(config.contactEmail);}
     if(config.livestreamUrl){const link=externalLink('前往官方直播 ↗',config.livestreamUrl,'text-link');if(link)$('#livestream').replaceWith(link);}
