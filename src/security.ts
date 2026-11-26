@@ -1,4 +1,3 @@
-import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
 import type { Env } from './types';
 
 export class HttpError extends Error {
@@ -10,7 +9,9 @@ export function localDevelopment(req: Request, env: Env) {
     u.protocol === 'http:' && ['localhost','127.0.0.1','[::1]'].includes(u.hostname);
 }
 export function requireOrigin(req: Request, env: Env) {
-  if (req.headers.get('Origin') !== env.SITE_ORIGIN || new URL(req.url).origin !== env.SITE_ORIGIN) {
+  const url = new URL(req.url);
+  const expected = env.SITE_ORIGIN;
+  if (req.headers.get('Origin') !== expected || url.origin !== expected) {
     throw new HttpError(403, '請從本站重新操作。');
   }
   if (!req.headers.get('Content-Type')?.toLowerCase().startsWith('application/json')) {
@@ -33,32 +34,6 @@ export async function readJson(req: Request): Promise<unknown> {
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
   try { return JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)); }
   catch { throw new HttpError(400, '資料格式不正確。'); }
-}
-const jwks = new Map<string, JWTVerifyGetKey>();
-export async function verifyAdminToken(token: string, env: Env, keys?: JWTVerifyGetKey) {
-  if (!/^[a-z0-9-]+\.cloudflareaccess\.com$/.test(env.ACCESS_TEAM_DOMAIN || '') || !env.ACCESS_AUD || !env.ADMIN_EMAILS) {
-    throw new HttpError(503, '管理者登入尚未設定。');
-  }
-  const issuer = `https://${env.ACCESS_TEAM_DOMAIN}`;
-  if (!keys) {
-    keys = jwks.get(issuer);
-    if (!keys) { keys = createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`)); jwks.set(issuer, keys); }
-  }
-  try {
-    const { payload } = await jwtVerify(token, keys, {
-      issuer, audience: env.ACCESS_AUD, algorithms: ['RS256'], requiredClaims: ['exp','iat','sub','email']
-    });
-    const email = String(payload.email).toLowerCase();
-    const allowed = env.ADMIN_EMAILS.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-    if (!allowed.includes(email)) throw new Error('not allowed');
-    return email;
-  } catch { throw new HttpError(403, '登入已失效或沒有管理權限，請重新登入。'); }
-}
-export async function requireAdmin(req: Request, env: Env) {
-  if (localDevelopment(req, env)) return 'local-admin@example.com';
-  const token = req.headers.get('Cf-Access-Jwt-Assertion');
-  if (!token) throw new HttpError(401, '請先透過 Cloudflare Access 登入。');
-  return verifyAdminToken(token, env);
 }
 export async function rateLimit(req: Request, env: Env, write: boolean) {
   if (localDevelopment(req, env)) return;
