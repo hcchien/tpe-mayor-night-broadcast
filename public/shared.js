@@ -25,17 +25,17 @@ export function externalLink(text, url, className = 'button secondary') {
   const href = safeUrl(url); return href ? el('a',{href,target:'_blank',rel:'noopener noreferrer',class:className},text) : null;
 }
 export function options(select, values) { for (const value of values) select.append(el('option',{value},value)); }
-export const fieldNames = { name:'店家／場地名稱', district:'行政區', category:'場地類型', address:'完整地址', capacity:'預計容納人數', screen:'螢幕與音響設備', opening_time:'當天開放時間', cost:'消費與入場方式', description:'場地介紹與參與須知', booking_url:'店家公開網站或預約連結', accessible:'提供無階梯入口', contact_name:'聯絡人姓名', contact_email:'聯絡 Email', contact_phone:'聯絡電話' };
+export const fieldNames = { name:'店家／場地名稱', city:'縣市', district:'鄉鎮市區', category:'場地類型', address:'完整地址', capacity:'預計容納人數', screen:'螢幕與音響設備', opening_time:'當天開放時間', cost:'消費與入場方式', description:'場地介紹與參與須知', booking_url:'店家公開網站或預約連結', accessible:'提供無階梯入口', contact_name:'聯絡人姓名', contact_email:'聯絡 Email', contact_phone:'聯絡電話' };
 export function venueFields(config, value = {}, privateFields = false, prefix = '') {
   const grid = el('div',{class:'field-grid'});
   const specs = privateFields ? [
     ['contact_name','text',80,true],['contact_email','email',254,true],['contact_phone','tel',30,true]
   ] : [
-    ['name','text',80,true],['district','select'],['category','select'],['address','text',200,true],
+    ['name','text',80,true],['city','select'],['district','text',10],['category','select'],['address','text',200,true],
     ['capacity','number'],['screen','text',120],['opening_time','text',120],['cost','text',200,true],
     ['description','textarea',1500,true],['booking_url','url',500,true],['accessible','checkbox',0,true]
   ];
-  const placeholders = {name:'例如：城市街角咖啡',address:'台北市○○區○○路○號，含樓層',screen:'例如：75 吋電視、外接音響',opening_time:'例如：活動當日 18:00–22:00',cost:'例如：每人低消一杯飲料，需事先訂位',description:'介紹你的空間、設備與當天安排，請勿填寫私人聯絡資料。',booking_url:'https://（選填，供訪客聯絡或訂位）',contact_phone:'例如：02-2345-6789'};
+  const placeholders = {name:'例如：城市街角咖啡',district:'例如：中正區、竹北市、吉安鄉',address:'縣市＋鄉鎮市區＋路名門牌，含樓層',screen:'例如：75 吋電視、外接音響',opening_time:'例如：活動當日 18:00–22:00',cost:'例如：每人低消一杯飲料，需事先訂位',description:'介紹你的空間、設備與當天安排，請勿填寫私人聯絡資料。',booking_url:'https://（選填，供訪客聯絡或訂位）',contact_phone:'例如：02-2345-6789'};
   for (const [name,type,max,wide] of specs) {
     const label = el('label',{class:wide ? 'wide' : ''});
     if (type === 'checkbox') {
@@ -43,9 +43,10 @@ export function venueFields(config, value = {}, privateFields = false, prefix = 
     } else {
       label.append(el('span',{},fieldNames[name] + (name === 'booking_url' ? '（選填）' : ' *')));
       const input = type === 'select' ? el('select',{name,id:prefix+name,required:true}) : type === 'textarea' ? el('textarea',{name,id:prefix+name,rows:4,required:true,maxlength:max,minlength:10}) : el('input',{name,id:prefix+name,type,required:name !== 'booking_url',maxlength:max,placeholder:placeholders[name],autocomplete:privateFields ? {contact_name:'name',contact_email:'email',contact_phone:'tel'}[name] : 'off'});
-      if (type === 'select') { input.append(el('option',{value:''},'請選擇')); options(input,name === 'district' ? config.districts : config.categories); }
+      if (type === 'select') { input.append(el('option',{value:''},'請選擇')); options(input,name === 'city' ? config.cities : config.categories); }
       if (type === 'number') { input.min='1';input.max='5000';input.step='1'; }
       if (['name','screen','opening_time'].includes(name)) input.minLength=2;
+      if (name === 'district') { input.minLength=2; input.pattern='[\\p{Script=Han}]+[鄉鎮市區]'; }
       if (name === 'address') input.minLength=5;
       if (name === 'contact_phone') input.minLength=6;
       if (value[name] != null) input.value=value[name];

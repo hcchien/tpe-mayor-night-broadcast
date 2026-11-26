@@ -19,7 +19,7 @@ export function database() {
 export function environment(overrides:Partial<Env>={}): Env {
   return {DB:database(),ASSETS:{fetch:async()=>new Response('static')},WRITE_LIMITER:{limit:async()=>({success:true})},READ_LIMITER:{limit:async()=>({success:true})},ENVIRONMENT:'development',LOCAL_DEV_AUTH:'true',SITE_ORIGIN:'http://127.0.0.1:8787',ADMIN_EMAILS:'admin@example.com',TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET_KEY:'real-shaped-test-secret',IP_HASH_SECRET:'0123456789012345678901234567890123456789',REGISTRATION_OPEN:'true',DAILY_SUBMISSION_LIMIT:'200',EVENT_LABEL:'測試活動',EVENT_TIME:'時間待公布',LIVESTREAM_URL:'',CONTACT_EMAIL:'organizer@example.com',ORGANIZER_NAME:'測試主辦',PRIVACY_DELETE_AFTER:'2099-12-31',...overrides} as unknown as Env;
 }
-export const venue = {name:'測試咖啡店',district:'中正區',category:'咖啡廳',address:'台北市中正區測試路 100 號',capacity:40,screen:'75 吋電視',opening_time:'18:00–22:00',cost:'低消一杯飲料',description:'這是一間供測試使用的店家，歡迎一起看直播。',booking_url:'https://example.com/booking',accessible:true,contact_name:'私人聯絡人',contact_email:'private@example.com',contact_phone:'02-2345-6789'};
+export const venue = {name:'測試咖啡店',city:'臺北市',district:'中正區',category:'咖啡廳',address:'台北市中正區測試路 100 號',capacity:40,screen:'75 吋電視',opening_time:'18:00–22:00',cost:'低消一杯飲料',description:'這是一間供測試使用的店家，歡迎一起看直播。',booking_url:'https://example.com/booking',accessible:true,contact_name:'私人聯絡人',contact_email:'private@example.com',contact_phone:'02-2345-6789'};
 export const submission = {...venue,consent:true,website:'',turnstile_token:'local-development'};
 export const ctx = {waitUntil:()=>{},passThroughOnException:()=>{}} as unknown as ExecutionContext;
 export function testSession(env:Env,email=venue.contact_email,sub='test-google-sub') {
