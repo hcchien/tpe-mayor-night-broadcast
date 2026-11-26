@@ -5,7 +5,7 @@ import { environment, submission, venue, ctx, testSession } from './support';
 
 function client(env=environment()) {
   const session=testSession(env);
-  const request=(path:string,method='GET',body?:unknown,headers={})=>worker.fetch(new Request(env.SITE_ORIGIN+path,{method,headers:{Origin:env.SITE_ORIGIN,'Content-Type':'application/json',Cookie:session,...headers},...(body!==undefined?{body:JSON.stringify(body)}:{})}),env,ctx);
+  const request=(path:string,method='GET',body?:unknown,headers={})=>worker.fetch(new Request(env.SITE_ORIGIN+path,{method,headers:{Origin:env.SITE_ORIGIN,'Content-Type':'application/json','CF-Connecting-IP':'192.0.2.10',Cookie:session,...headers},...(body!==undefined?{body:JSON.stringify(body)}:{})}),env,ctx);
   return {env,request};
 }
 test('registration → private pending → approve → public projection → report → withdraw → delete',async()=>{
@@ -53,7 +53,7 @@ test('filters escape SQL wildcards, reject invalid pagination and never leak pen
 });
 test('production admin page and APIs fail closed, and alternate hosts are rejected',async()=>{
   const env=environment({ENVIRONMENT:'production',SITE_ORIGIN:'https://example.com'});const {request}=client(env);
-  for(const path of ['/admin','/admin/','/admin/index.html','/api/admin/venues','/api/admin/reports','/api/admin/audit'])assert.equal((await request(path)).status,401);
+  for(const path of ['/api/admin/venues','/api/admin/reports','/api/admin/audit'])assert.equal((await request(path)).status,403);
   assert.equal((await worker.fetch(new Request('https://alternate.example/api/config'),env,ctx)).status,403);
 });
 test('closed or expired registrations reject writes and cron removes personal data',async()=>{
@@ -65,4 +65,35 @@ test('closed or expired registrations reject writes and cron removes personal da
 });
 test('API failures are no-store and security headers prevent framing and sniffing',async()=>{
   const {request}=client();const r=await request('/api/venues','POST',{...submission,contact_phone:'bad'});assert.equal(r.status,400);assert.equal(r.headers.get('cache-control'),'no-store');assert.equal(r.headers.get('x-frame-options'),'DENY');assert.match(r.headers.get('content-security-policy')!,/object-src 'none'/);
+});
+test('optional organizer and retention settings permit registration without scheduled event deletion',async()=>{
+  const {env,request}=client(environment({ORGANIZER_NAME:'',CONTACT_EMAIL:'',PRIVACY_DELETE_AFTER:''}));
+  assert.equal((await request('/api/venues','POST',submission)).status,201);
+  await worker.scheduled({} as ScheduledController,env);
+  assert.equal((env.DB as any).sql.prepare('SELECT COUNT(*) n FROM venues').get().n,1);
+  env.PRIVACY_DELETE_AFTER='invalid-date';
+  assert.equal((await request('/api/venues','POST',submission)).status,403);
+});
+test('admin UI redirects anonymous users to login while APIs reject forged identities',async()=>{
+  const env=environment({ENVIRONMENT:'production',SITE_ORIGIN:'https://example.com'});
+  for(const path of ['/admin','/admin/','/admin/index.html']) {
+    const r=await worker.fetch(new Request(env.SITE_ORIGIN+path,{headers:{'CF-Connecting-IP':'192.0.2.10'}}),env,ctx);
+    assert.equal(r.status,303);assert.equal(r.headers.get('location'),'/login-admin.html');
+    assert.equal(r.headers.get('cache-control'),'no-store');
+  }
+  for(const path of ['/api/admin/venues','/api/admin/reports','/api/admin/audit']) {
+    const r=await worker.fetch(new Request(env.SITE_ORIGIN+path,{headers:{'CF-Connecting-IP':'192.0.2.10','Cf-Access-Authenticated-User-Email':'admin@example.com','Cf-Access-Jwt-Assertion':'forged'}}),env,ctx);
+    assert.equal(r.status,401);
+  }
+});
+
+test('delete returns success with cascading reports and rejects stale versions without extra audit rows',async()=>{
+  const {env,request}=client();const {id}=await (await request('/api/venues','POST',submission)).json() as any;
+  await request(`/api/admin/venues/${id}`,'PATCH',{version:1,status:'approved',moderation_note:'確認店家授權'});
+  for(let i=0;i<2;i++)assert.equal((await request('/api/reports','POST',{venue_id:id,reason:'請確認店家的開放時間。',website:'',turnstile_token:'local-development'})).status,201);
+  assert.equal((await request(`/api/admin/venues/${id}`,'DELETE',{version:1})).status,409);
+  assert.equal((await request(`/api/admin/venues/${id}`,'DELETE',{version:2})).status,200);
+  assert.equal((env.DB as any).sql.prepare('SELECT COUNT(*) n FROM reports').get().n,0);
+  assert.equal((await request(`/api/admin/venues/${id}`,'DELETE',{version:2})).status,409);
+  assert.equal((env.DB as any).sql.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='venue:delete'").get().n,1);
 });

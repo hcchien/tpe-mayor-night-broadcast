@@ -1,8 +1,8 @@
+import { requireAdmin } from '../src/merchant-auth';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
-import { environment, submission } from './support';
-import { localDevelopment, readJson, requireAdmin, requireOrigin, verifyAdminToken, verifyTurnstile, rateLimit } from '../src/security';
+import { environment, submission, testSession } from './support';
+import { localDevelopment, readJson, requireOrigin, verifyTurnstile, rateLimit } from '../src/security';
 import { submissionSchema } from '../src/schema';
 import { validDate } from '../src/config';
 
@@ -22,13 +22,20 @@ test('local authentication bypass requires development flag AND loopback HTTP',(
 test('admin rejects forged email headers and missing JWT',async()=>{
   await assert.rejects(()=>requireAdmin(new Request('https://example.com/admin/',{headers:{'Cf-Access-Authenticated-User-Email':'admin@example.com'}}),environment({ENVIRONMENT:'production'})),/登入/);
 });
-test('Access JWT validates signature, audience, issuer, expiry and allowlist',async()=>{
-  const {privateKey,publicKey}=await generateKeyPair('RS256');const jwk=await exportJWK(publicKey);jwk.kid='test';const keys=createLocalJWKSet({keys:[jwk]});
-  const env=environment();
-  const token=async(payload={}, issuer='https://team.cloudflareaccess.com',aud='test-aud',expiry='5m')=>new SignJWT({email:'admin@example.com',...payload}).setProtectedHeader({alg:'RS256',kid:'test'}).setSubject('admin').setIssuedAt().setIssuer(issuer).setAudience(aud).setExpirationTime(expiry).sign(privateKey);
-  assert.equal(await verifyAdminToken(await token(),env,keys),'admin@example.com');
-  for(const invalid of [await token({email:'other@example.com'}),await token({},'https://evil.example'),await token({},undefined,'other-aud'),await token({},undefined,undefined,'-1s'),'eyJhbGciOiJub25lIn0.eyJlbWFpbCI6ImFkbWluQGV4YW1wbGUuY29tIn0.'])await assert.rejects(()=>verifyAdminToken(invalid,env,keys),/權限/);
-  const other=await generateKeyPair('RS256');const forged=await new SignJWT({email:'admin@example.com'}).setProtectedHeader({alg:'RS256',kid:'test'}).setSubject('admin').setIssuer('https://team.cloudflareaccess.com').setAudience('test-aud').setIssuedAt().setExpirationTime('5m').sign(other.privateKey);await assert.rejects(()=>verifyAdminToken(forged,env,keys));
+test('admin requires an authoritative Google session, rechecks allowlist and rejects expired or forged sessions',async()=>{
+  const env=environment({ENVIRONMENT:'production',SITE_ORIGIN:'https://example.com'});
+  const request=(cookie:string)=>new Request(env.SITE_ORIGIN+'/admin/',{headers:{Cookie:cookie}});
+  const allowed=testSession(env,'admin@example.com');
+  assert.equal(await requireAdmin(request(allowed),env),'admin@example.com');
+  await assert.rejects(()=>requireAdmin(request(testSession(env,'other@example.com')),env),/權限/);
+  env.ADMIN_EMAILS='changed@example.com';await assert.rejects(()=>requireAdmin(request(allowed),env),/權限/);env.ADMIN_EMAILS='admin@example.com';
+  for(const changes of ["email_authoritative=0","identity_provider='local'","expires_at=1"]){
+    (env.DB as any).sql.exec('UPDATE merchant_sessions SET '+changes);
+    await assert.rejects(()=>requireAdmin(request(allowed),env));
+    (env.DB as any).sql.exec("UPDATE merchant_sessions SET email_authoritative=1,identity_provider='google',expires_at=9999999999");
+  }
+  await assert.rejects(()=>requireAdmin(request('__Host-night-session='+'x'.repeat(43)),env));
+  await assert.rejects(()=>requireAdmin(request(allowed+'; '+allowed),env));
 });
 test('CSRF rejects missing / foreign Origin and non-JSON bodies',()=>{
   const env=environment();

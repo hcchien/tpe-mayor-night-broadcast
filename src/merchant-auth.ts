@@ -56,8 +56,8 @@ export async function verifyGoogleIdentity(idToken: string, env: Env, nonce: str
     return {google_sub:payload.sub,email,email_authoritative:Number(authoritative),identity_provider:'google',authenticated_at:new Date().toISOString()};
   } catch { throw new HttpError(401,'Google 身分驗證失敗，請重新登入。'); }
 }
-export async function merchantSession(req: Request, env: Env): Promise<MerchantIdentity | null> {
-  if(!retentionActive(env))return null;
+export async function merchantSession(req: Request, env: Env, forAdmin = false): Promise<MerchantIdentity | null> {
+  if(!forAdmin && !retentionActive(env))return null;
   const token=readCookie(req,cookieName(req,env,'session'));if(!token)return null;
   const identity=await env.DB.prepare('SELECT google_sub,email,email_authoritative,identity_provider,authenticated_at FROM merchant_sessions WHERE token_hash=? AND expires_at>?')
     .bind(await hashToken(token),seconds()).first<MerchantIdentity>();
@@ -79,11 +79,11 @@ async function setSession(req: Request, env: Env, identity: MerchantIdentity, re
   res.headers.append('Set-Cookie',cookie(req,env,'session',token,SESSION_SECONDS));
   return res;
 }
-export async function beginGoogleLogin(req: Request, env: Env) {
-  if(!registrationOpen(env))throw new HttpError(403,'店家登記目前暫停受理。');
+export async function beginGoogleLogin(req: Request, env: Env, admin = false) {
+  if(!admin && !registrationOpen(env))throw new HttpError(403,'店家登記目前暫停受理。');
   if(!googleLoginConfigured(req,env))throw new HttpError(503,'Google 登入尚未設定。');
   if(localDevelopment(req,env)) {
-    return setSession(req,env,{google_sub:'local-test-merchant',email:'merchant@example.com',email_authoritative:0,identity_provider:'local',authenticated_at:new Date().toISOString()},response({url:'/#register'}));
+    return setSession(req,env,{google_sub:'local-test-merchant',email:'merchant@example.com',email_authoritative:0,identity_provider:'local',authenticated_at:new Date().toISOString()},response({url:admin?'/admin/':'/#register'}));
   }
   // Global bound on state/session creation; per-IP write rate limit runs before this handler.
   const budget=await env.DB.prepare("INSERT INTO daily_intake(day,kind,count) VALUES(?,'oauth_login',1) ON CONFLICT(day,kind) DO UPDATE SET count=count+1 WHERE count<2000 RETURNING count")
@@ -92,8 +92,8 @@ export async function beginGoogleLogin(req: Request, env: Env) {
   const state=randomToken(),browser=randomToken(),nonce=randomToken(),verifier=randomToken();
   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier));
   const challenge=btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-  await env.DB.prepare('INSERT INTO oauth_states(state_hash,browser_hash,nonce,code_verifier,expires_at) VALUES(?,?,?,?,?)')
-    .bind(await hashToken(state),await hashToken(browser),nonce,verifier,seconds()+FLOW_SECONDS).run();
+  await env.DB.prepare('INSERT INTO oauth_states(state_hash,browser_hash,nonce,code_verifier,expires_at,admin_login) VALUES(?,?,?,?,?,?)')
+    .bind(await hashToken(state),await hashToken(browser),nonce,verifier,seconds()+FLOW_SECONDS,Number(admin)).run();
   const url=new URL('https://accounts.google.com/o/oauth2/v2/auth');
   url.search=new URLSearchParams({client_id:env.GOOGLE_CLIENT_ID,redirect_uri:env.SITE_ORIGIN+'/api/auth/callback',
     response_type:'code',scope:'openid email',state,nonce,code_challenge:challenge,code_challenge_method:'S256',prompt:'select_account'}).toString();
@@ -104,17 +104,20 @@ export async function consumeOAuthState(req: Request, env: Env) {
   const state=params.get('state');const browser=readCookie(req,cookieName(req,env,'oauth'));
   if(params.getAll('state').length!==1 || !state || !/^[A-Za-z0-9_-]{43}$/.test(state) || !browser)throw new HttpError(400,'登入請求無效或已過期。');
   // DELETE RETURNING is atomic: even simultaneous callback replay can consume the state only once.
-  const flow=await env.DB.prepare('DELETE FROM oauth_states WHERE state_hash=? AND browser_hash=? AND expires_at>? RETURNING nonce,code_verifier')
-    .bind(await hashToken(state),await hashToken(browser),seconds()).first<{nonce:string;code_verifier:string}>();
+  const flow=await env.DB.prepare('DELETE FROM oauth_states WHERE state_hash=? AND browser_hash=? AND expires_at>? RETURNING nonce,code_verifier,admin_login')
+    .bind(await hashToken(state),await hashToken(browser),seconds()).first<{nonce:string;code_verifier:string;admin_login:number}>();
   if(!flow)throw new HttpError(400,'登入請求無效或已過期。');
   return flow;
 }
 export async function finishGoogleLogin(req: Request, env: Env) {
-  const redirect=(error?:string)=>new Response(null,{status:303,headers:{Location:env.SITE_ORIGIN+'/'+(error?'?login_error='+error:'')+'#register','Cache-Control':'no-store'}});
+  let admin = false;
+  const redirect=(error?:string)=>new Response(null,{status:303,headers:{Location:env.SITE_ORIGIN+(admin?(error?'/login-admin.html?login_error='+error:'/admin/'):'/'+(error?'?login_error='+error:'')+'#register'),'Cache-Control':'no-store'}});
   let res:Response;
   try {
-    if(!registrationOpen(env)||!googleLoginConfigured(req,env))throw new HttpError(503,'登入暫停');
-    const flow=await consumeOAuthState(req,env);const params=new URL(req.url).searchParams;
+    if(!googleLoginConfigured(req,env))throw new HttpError(503,'登入暫停');
+    const flow=await consumeOAuthState(req,env);admin=flow.admin_login===1;
+    if(!admin && !registrationOpen(env))throw new HttpError(503,'登入暫停');
+    const params=new URL(req.url).searchParams;
     if(params.has('error'))res=redirect('cancelled');
     else {
       const code=params.get('code');const issuer=params.get('iss');
@@ -129,6 +132,7 @@ export async function finishGoogleLogin(req: Request, env: Env) {
         idToken=tokens.id_token;
       } catch {throw new HttpError(503,'登入服務暫時無法使用');}
       const identity=await verifyGoogleIdentity(idToken,env,flow.nonce);
+      if(admin && !adminIdentityAllowed(identity,env))throw new HttpError(403,'沒有管理權限');
       res=await setSession(req,env,identity,redirect());
     }
   } catch(error) {res=redirect(error instanceof HttpError && error.status===503?'unavailable':'failed');}
@@ -147,4 +151,17 @@ export async function limitMerchantSubmissions(env: Env, identity: MerchantIdent
   const result=await env.DB.prepare('INSERT INTO daily_intake(day,kind,count) VALUES(?,?,1) ON CONFLICT(day,kind) DO UPDATE SET count=count+1 WHERE count<3 RETURNING count')
     .bind(new Date().toISOString().slice(0,10),key).first();
   if(!result)throw new HttpError(429,'每個 Google 帳號每日最多登記 3 個場地，更多場地請聯絡主辦單位。');
+}
+
+export function adminIdentityAllowed(identity: MerchantIdentity, env: Env) {
+  return identity.identity_provider==='google' && identity.email_authoritative===1 &&
+    (env.ADMIN_EMAILS||'').split(',').map(e=>e.trim().toLowerCase()).filter(Boolean).includes(identity.email.toLowerCase());
+}
+export async function requireAdmin(req: Request, env: Env) {
+  if(localDevelopment(req,env))return 'local-admin@example.com';
+  if(!env.ADMIN_EMAILS)throw new HttpError(503,'管理者登入尚未設定。');
+  const identity=await merchantSession(req,env,true);
+  if(!identity)throw new HttpError(401,'請先使用 Google 帳號登入管理後台。');
+  if(!adminIdentityAllowed(identity,env))throw new HttpError(403,'此 Google 帳號沒有管理權限。');
+  return identity.email;
 }

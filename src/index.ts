@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { categories, districts, publicColumns, reportSchema, reviewSchema, submissionSchema, venueColumns } from './schema';
-import { HttpError, localDevelopment, rateLimit, readJson, requireAdmin, requireOrigin, securityHeaders, verifyTurnstile } from './security';
+import { HttpError, localDevelopment, rateLimit, readJson, requireOrigin, securityHeaders, verifyTurnstile } from './security';
 import type { Env } from './types';
 import { validDate, retentionActive, registrationOpen } from './config';
-import { beginGoogleLogin, finishGoogleLogin, googleLoginConfigured, limitMerchantSubmissions, logoutMerchant, merchantSession, requireMerchant } from './merchant-auth';
+import { beginGoogleLogin, finishGoogleLogin, googleLoginConfigured, limitMerchantSubmissions, logoutMerchant, merchantSession, requireMerchant, requireAdmin } from './merchant-auth';
 
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 const now = () => new Date().toISOString();
@@ -48,11 +48,19 @@ async function publicVenues(req: Request, env: Env, ctx: ExecutionContext) {
   return response;
 }
 async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-  const path = new URL(req.url).pathname;
-  if (!localDevelopment(req,env) && new URL(req.url).origin !== env.SITE_ORIGIN) throw new HttpError(403, '請使用網站正式網址。');
+  const url = new URL(req.url);
+  const path = url.pathname;
+  if (!localDevelopment(req,env) && url.origin !== env.SITE_ORIGIN) throw new HttpError(403, '請使用網站正式網址。');
   const admin = path === '/admin' || path.startsWith('/admin/') || path === '/api/admin' || path.startsWith('/api/admin/');
+  if(admin || path.startsWith('/api/'))await rateLimit(req,env,req.method !== 'GET' || path==='/api/auth/callback');
   let actor = '';
-  if (admin) actor = await requireAdmin(req,env);
+  if(admin) {
+    try { actor=await requireAdmin(req,env); }
+    catch(error) {
+      if(error instanceof HttpError && error.status===401 && (path==='/admin'||path.startsWith('/admin/')) && (req.method==='GET'||req.method==='HEAD'))return new Response(null,{status:303,headers:{Location:'/login-admin.html','Cache-Control':'no-store'}});
+      throw error;
+    }
+  }
   if (!path.startsWith('/api/')) {
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405,'不支援此操作。');
     const result = await env.ASSETS.fetch(req);
@@ -61,10 +69,9 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     return response;
   }
   if (req.method !== 'GET') requireOrigin(req,env);
-  await rateLimit(req,env,req.method !== 'GET' || path==='/api/auth/callback');
   if(path==='/api/auth/login' && req.method==='POST') {
-    z.object({}).strict().parse(await readJson(req));
-    return beginGoogleLogin(req,env);
+    const body=z.object({admin:z.boolean().optional()}).strict().parse(await readJson(req));
+    return beginGoogleLogin(req,env,body.admin===true);
   }
   if(path==='/api/auth/callback' && req.method==='GET')return finishGoogleLogin(req,env);
   if(path==='/api/auth/logout' && req.method==='POST') {
@@ -76,7 +83,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     return json({user:user?{email:user.email,emailAuthoritative:!!user.email_authoritative,provider:user.identity_provider}:null});
   }
   if (path === '/api/config' && req.method === 'GET') return json({
-    eventLabel: env.EVENT_LABEL, eventTime: env.EVENT_TIME, livestreamUrl: env.LIVESTREAM_URL,
+    eventLabel: env.EVENT_LABEL, eventTime: env.EVENT_TIME, livestreamUrl: env.LIVESTREAM_URL, siteOrigin:env.SITE_ORIGIN,
     contactEmail: env.CONTACT_EMAIL, organizerName: env.ORGANIZER_NAME,
     deleteAfter: env.PRIVACY_DELETE_AFTER, registrationOpen: registrationOpen(env),
     googleLoginAvailable:googleLoginConfigured(req,env),
@@ -94,7 +101,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     const id = crypto.randomUUID(); const timestamp = now();
     const values = venueColumns.map(k => typeof data[k] === 'boolean' ? Number(data[k]) : data[k]);
     await env.DB.prepare(`INSERT INTO venues(id,${venueColumns.join(',')},consent_version,created_at,updated_at,owner_google_sub,owner_google_email,owner_email_authoritative,owner_verified_at,owner_identity_provider) VALUES(${Array(venueColumns.length+9).fill('?').join(',')})`)
-      .bind(id,...values,'2026-11-26-google-v1',timestamp,timestamp,identity.google_sub,identity.email,identity.email_authoritative,identity.authenticated_at,identity.identity_provider).run();
+      .bind(id,...values,'2026-11-26-google-v2',timestamp,timestamp,identity.google_sub,identity.email,identity.email_authoritative,identity.authenticated_at,identity.identity_provider).run();
     return json({ id, message: '已收到登記，主辦單位查核後才會公開。請保存登記編號。' },201);
   }
   if (path === '/api/reports' && req.method === 'POST') {
@@ -140,9 +147,10 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     const result = await env.DB.batch([
       env.DB.prepare('INSERT INTO audit_log(id,actor,action,target_id,detail,created_at) SELECT ?,?,?,?,?,? FROM venues WHERE id=? AND version=?')
         .bind(crypto.randomUUID(),actor,'venue:delete',id,'{}',now(),id,data.version),
-      env.DB.prepare('DELETE FROM venues WHERE id=? AND version=?').bind(id,data.version)
+      env.DB.prepare('DELETE FROM venues WHERE id=? AND version=? RETURNING id').bind(id,data.version)
     ]);
-    if (result[1].meta.changes !== 1) throw new HttpError(409,'資料已被修改或刪除，請重新載入。');
+    // D1 changes includes cascaded report deletions; RETURNING identifies the one target venue.
+    if (result[1].results.length !== 1) throw new HttpError(409,'資料已被修改或刪除，請重新載入。');
     return json({ message:'場地與聯絡資料已刪除；公開快取最多保留 30 秒。' });
   }
   if (path === '/api/admin/reports' && req.method === 'GET') {

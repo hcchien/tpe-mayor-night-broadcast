@@ -6,8 +6,8 @@ export function validDate(value: string | undefined): value is string {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0,10) === value;
 }
 export function retentionActive(env: Env) {
-  return validDate(env.PRIVACY_DELETE_AFTER) && env.PRIVACY_DELETE_AFTER >= new Date().toISOString().slice(0,10);
+  return !env.PRIVACY_DELETE_AFTER || (validDate(env.PRIVACY_DELETE_AFTER) && env.PRIVACY_DELETE_AFTER >= new Date().toISOString().slice(0,10));
 }
 export function registrationOpen(env: Env) {
-  return env.REGISTRATION_OPEN === 'true' && !!env.ORGANIZER_NAME && !!env.CONTACT_EMAIL && retentionActive(env);
+  return env.REGISTRATION_OPEN === 'true' && retentionActive(env);
 }

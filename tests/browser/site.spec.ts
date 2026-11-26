@@ -22,9 +22,9 @@ test('store registration, approval, search, report, withdrawal and deletion',asy
 });
 
 test('registration requires login and logout locks the form again',async({page})=>{
-  await page.goto('/#register');await expect(page.locator('#registration-fields')).toBeDisabled();
-  await page.getByRole('button',{name:'本機模擬 Google 登入',exact:true}).click();await expect(page.locator('#registration-fields')).toBeEnabled();
-  await page.getByRole('button',{name:'登出本站',exact:true}).click();await expect(page.locator('#registration-fields')).toBeDisabled();await expect(page.locator('#merchant-message')).toContainText('已登出本站');
+  await page.goto('/#register');await expect(page.locator('#register-form [name=name]')).toBeDisabled();
+  await page.getByRole('button',{name:'本機模擬 Google 登入',exact:true}).click();await expect(page.locator('#register-form [name=name]')).toBeEnabled();
+  await page.getByRole('button',{name:'登出本站',exact:true}).click();await expect(page.locator('#register-form [name=name]')).toBeDisabled();await expect(page.locator('#merchant-message')).toContainText('已登出本站');
 });
 
 test('mobile and desktop fit viewport, privacy page and empty search work',async({page})=>{
