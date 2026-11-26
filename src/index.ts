@@ -1,12 +1,14 @@
 import { z } from 'zod';
 import { districtsByCity, validLocation } from './locations';
-import { categories, cities, citySchema, districtSchema, publicColumns, reportSchema, reviewSchema, submissionSchema, venueColumns } from './schema';
+import { eventIds, eventOptions, categories, cities, citySchema, districtSchema, publicColumns, reportSchema, reviewSchema, submissionSchema, venueColumns } from './schema';
 import { HttpError, localDevelopment, rateLimit, readJson, requireOrigin, securityHeaders, verifyTurnstile } from './security';
 import type { Env } from './types';
 import { validDate, retentionActive, registrationOpen } from './config';
 import { beginGoogleLogin, finishGoogleLogin, googleLoginConfigured, limitMerchantSubmissions, logoutMerchant, merchantSession, requireMerchant, requireAdmin } from './merchant-auth';
 
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
+const venueRow = (value: unknown) => { const row=value as Record<string, unknown>; return {...row, events: JSON.parse(row.events as string)}; };
+const dbValue = (value: unknown) => Array.isArray(value) ? JSON.stringify(value) : typeof value === 'boolean' ? Number(value) : value;
 const now = () => new Date().toISOString();
 async function intake(env: Env, kind: string) {
   const configured = Number(env.DAILY_SUBMISSION_LIMIT);
@@ -22,6 +24,8 @@ async function publicVenues(req: Request, env: Env, ctx: ExecutionContext) {
   const districtValue = (url.searchParams.get('district') || '').trim();
   const district = districtValue ? districtSchema.parse(districtValue) : '';
   const category = url.searchParams.get('category') || '';
+  const event = url.searchParams.get('event') || '';
+  if(event && !eventIds.includes(event as typeof eventIds[number]))throw new HttpError(400,'活動選擇不正確。');
   const q = (url.searchParams.get('q') || '').trim();
   const page = Number(url.searchParams.get('page') || 1);
   const accessible = url.searchParams.get('accessible') === '1';
@@ -30,7 +34,7 @@ async function publicVenues(req: Request, env: Env, ctx: ExecutionContext) {
     throw new HttpError(400, '查詢條件不正確。');
   }
   const canonical = new URL('/api/venues', env.SITE_ORIGIN);
-  for (const [k,v] of Object.entries({ city, district, category, q, page: String(page), accessible: accessible ? '1' : '' })) if (v) canonical.searchParams.set(k,v);
+  for (const [k,v] of Object.entries({ city, district, category, event, q, page: String(page), accessible: accessible ? '1' : '' })) if (v) canonical.searchParams.set(k,v);
   const key = new Request(canonical);
   const cache = typeof caches !== 'undefined' ? caches.default : undefined;
   const cached = await cache?.match(key); if (cached) return cached;
@@ -38,6 +42,7 @@ async function publicVenues(req: Request, env: Env, ctx: ExecutionContext) {
   if (city) { clauses.push('city=?'); values.push(city); }
   if (district) { clauses.push('district=?'); values.push(district); }
   if (category) { clauses.push('category=?'); values.push(category); }
+  if (event) { clauses.push('EXISTS (SELECT 1 FROM json_each(venues.events) WHERE value=?)'); values.push(event); }
   if (accessible) clauses.push('accessible=1');
   if (q) {
     clauses.push("(name LIKE ? ESCAPE '\\' OR address LIKE ? ESCAPE '\\')");
@@ -48,7 +53,7 @@ async function publicVenues(req: Request, env: Env, ctx: ExecutionContext) {
     env.DB.prepare(`SELECT ${publicColumns} FROM venues WHERE ${where} ORDER BY created_at DESC,id LIMIT 24 OFFSET ?`).bind(...values,(page-1)*24),
     env.DB.prepare(`SELECT COUNT(*) AS total FROM venues WHERE ${where}`).bind(...values)
   ]);
-  const response = Response.json({ venues: results[0].results, total: (results[1].results[0] as {total:number}).total, page, page_size: 24 }, { headers: { 'Cache-Control': 'public, max-age=30' } });
+  const response = Response.json({ venues: results[0].results.map(venueRow), total: (results[1].results[0] as {total:number}).total, page, page_size: 24 }, { headers: { 'Cache-Control': 'public, max-age=30' } });
   if (cache) ctx.waitUntil(cache.put(key,response.clone()));
   return response;
 }
@@ -92,7 +97,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     contactEmail: env.CONTACT_EMAIL, organizerName: env.ORGANIZER_NAME,
     deleteAfter: env.PRIVACY_DELETE_AFTER, registrationOpen: registrationOpen(env),
     googleLoginAvailable:googleLoginConfigured(req,env),
-    turnstileSiteKey: env.TURNSTILE_SITE_KEY, localDevelopment: localDevelopment(req,env), cities, districtsByCity, categories
+    turnstileSiteKey: env.TURNSTILE_SITE_KEY, localDevelopment: localDevelopment(req,env), cities, districtsByCity, categories, eventOptions
   });
   if (path === '/api/venues' && req.method === 'GET') return publicVenues(req,env,ctx);
   if (path === '/api/venues' && req.method === 'POST') {
@@ -104,7 +109,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     await limitMerchantSubmissions(env,identity);
     await intake(env,'registration');
     const id = crypto.randomUUID(); const timestamp = now();
-    const values = venueColumns.map(k => typeof data[k] === 'boolean' ? Number(data[k]) : data[k]);
+    const values = venueColumns.map(k => dbValue(data[k]));
     await env.DB.prepare(`INSERT INTO venues(id,${venueColumns.join(',')},consent_version,created_at,updated_at,owner_google_sub,owner_google_email,owner_email_authoritative,owner_verified_at,owner_identity_provider) VALUES(${Array(venueColumns.length+9).fill('?').join(',')})`)
       .bind(id,...values,'2026-11-26-google-v2',timestamp,timestamp,identity.google_sub,identity.email,identity.email_authoritative,identity.authenticated_at,identity.identity_provider).run();
     return json({ id, message: '已收到登記，主辦單位查核後才會公開。請保存登記編號。' },201);
@@ -127,14 +132,14 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
       env.DB.prepare('SELECT * FROM venues WHERE status=? ORDER BY created_at DESC,id LIMIT 30 OFFSET ?').bind(status,(page-1)*30),
       env.DB.prepare('SELECT COUNT(*) AS total FROM venues WHERE status=?').bind(status)
     ]);
-    return json({ venues:data[0].results, total:(data[1].results[0] as {total:number}).total, page, actor });
+    return json({ venues:data[0].results.map(venueRow), total:(data[1].results[0] as {total:number}).total, page, actor });
   }
   const venueMatch = path.match(/^\/api\/admin\/venues\/([a-f0-9-]{36})$/);
   if (venueMatch && req.method === 'PATCH') {
     const data = reviewSchema.parse(await readJson(req));
     const id = venueMatch[1]; const stamp = now(); const auditId = crypto.randomUUID();
     const fields = data.venue ? venueColumns : [];
-    const values = fields.map(k => typeof data.venue![k] === 'boolean' ? Number(data.venue![k]) : data.venue![k]);
+    const values = fields.map(k => dbValue(data.venue![k]));
     const changes = fields.map(k => `${k}=?`);
     // Audit INSERT and UPDATE share one D1 transaction. Both use the same version predicate.
     const result = await env.DB.batch([
