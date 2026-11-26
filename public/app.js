@@ -4,7 +4,7 @@ let merchant=null;
 const authMessage=$('#merchant-message');
 $('#google-login').addEventListener('click',async()=>{
   const button=$('#google-login');button.disabled=true;authMessage.textContent='正在前往登入…';
-  try{const data=await api('/api/auth/login',{method:'POST',body:'{}'});location.assign(data.url);}
+  try{const data=await api('/api/auth/login',{method:'POST',body:'{}'});if(config?.localDevelopment){merchant=(await api('/api/auth/me')).user;updateMerchantUI();authMessage.textContent='已完成本機模擬登入。';}else{location.assign(data.url);}}
   catch(error){showError(authMessage,error);button.disabled=false;}
 });
 $('#merchant-logout').addEventListener('click',async()=>{
