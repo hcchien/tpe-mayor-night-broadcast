@@ -1,8 +1,9 @@
 import { z } from 'zod';
+import { allDistricts, validLocation } from './locations';
 
 export const cities = ['臺北市','新北市','桃園市','臺中市','臺南市','高雄市','基隆市','新竹市','嘉義市','新竹縣','苗栗縣','彰化縣','南投縣','雲林縣','嘉義縣','屏東縣','宜蘭縣','花蓮縣','臺東縣','澎湖縣','金門縣','連江縣'] as const;
 export const citySchema = z.preprocess(v => typeof v === 'string' ? v.trim().replace(/^台/, '臺') : v, z.enum(cities));
-export const districtSchema = z.string().trim().min(2).max(10).regex(/^[\p{Script=Han}]+[鄉鎮市區]$/u, '請填寫鄉鎮市區，例如中正區、竹北市或吉安鄉');
+export const districtSchema = z.string().trim().max(10).transform(v => v.replace(/台/g,'臺')).refine(v => allDistricts.has(v), '請選擇有效的鄉鎮市區');
 export const categories = ['餐廳','咖啡廳','酒吧','共享空間','其他場地'] as const;
 const text = (min: number, max: number) => z.string().trim().min(min).max(max).refine(v => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(v), '包含不允許的控制字元');
 export const httpsUrl = z.string().trim().max(500).refine(v => {
@@ -17,8 +18,8 @@ export const venueSchema = z.object({
   accessible: z.boolean(), contact_name: text(1, 80),
   contact_email: z.email().max(254).transform(v => v.toLowerCase()),
   contact_phone: text(6, 30).refine(v => /^[+()\d\s-]+$/.test(v), '電話格式不正確')
-}).strict();
-export const submissionSchema = venueSchema.extend({
+}).strict().refine(v => validLocation(v.city,v.district), {path:['district'],message:'鄉鎮市區不屬於所選縣市，請重新選擇'});
+export const submissionSchema = venueSchema.safeExtend({
   consent: z.literal(true), website: z.literal(''),
   turnstile_token: text(1, 2048)
 });
