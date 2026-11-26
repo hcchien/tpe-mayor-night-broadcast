@@ -16,7 +16,7 @@ function venueCard(venue){
     remove.disabled=true;save.disabled=true;
     try{const result=await api(`/api/admin/venues/${venue.id}`,{method:'DELETE',body:JSON.stringify({version:venue.version})});await load();$('#admin-message').textContent=result.message;}catch(error){showError(message,error);remove.disabled=false;save.disabled=false;}
   }},'永久刪除');
-  form.append(el('p',{class:'eyebrow'},`${statuses[venue.status]} · ${fmt(venue.created_at)}`),el('h3',{},venue.name),el('p',{},`${venue.district} · ${venue.category}\n${venue.address}`),
+  form.append(el('p',{class:'eyebrow'},`${statuses[venue.status]} · ${fmt(venue.created_at)}`),el('h3',{},venue.name),el('p',{},`${venue.city}${venue.district} · ${venue.category}\n${venue.address}`),
     el('p',{},`${venue.screen} · 約 ${venue.capacity} 人\n開放：${venue.opening_time}\n消費：${venue.cost}`),el('p',{},venue.description),externalLink('檢查公開連結 ↗',venue.booking_url),
     el('p',{class:'private-data'},identityText),el('p',{class:'private-data'},`聯絡人：${venue.contact_name}\n聯絡 Email：${venue.contact_email}\n電話：${venue.contact_phone}\n登記編號：${venue.id}\n同意版本：${venue.consent_version}`),edit,
     el('label',{},'審核結果',status),el('label',{},'查核備註（不公開）',note),message,el('div',{class:'review-actions'},save,remove));
