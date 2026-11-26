@@ -97,3 +97,23 @@ test('delete returns success with cascading reports and rejects stale versions w
   assert.equal((await request(`/api/admin/venues/${id}`,'DELETE',{version:2})).status,409);
   assert.equal((env.DB as any).sql.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='venue:delete'").get().n,1);
 });
+
+test('city and district filters distinguish same-name districts and admin edits retain nationwide location',async()=>{
+  const {request}=client();
+  for(const city of ['臺北市','基隆市']) {
+    const r=await request('/api/venues','POST',{...submission,city,address:city+'中正區測試路 100 號'});assert.equal(r.status,201);
+    const {id}=await r.json() as any;
+    assert.equal((await request(`/api/admin/venues/${id}`,'PATCH',{version:1,status:'approved',moderation_note:'已查核場地授權'})).status,200);
+  }
+  const read=async(query:string)=>(await (await request('/api/venues?'+query)).json()) as any;
+  assert.equal((await read('district='+encodeURIComponent('中正區'))).total,2);
+  for(const city of ['臺北市','基隆市']) {
+    const data=await read(new URLSearchParams({city,district:'中正區'}).toString());
+    assert.equal(data.total,1);assert.equal(data.venues[0].city,city);assert.equal(data.venues[0].contact_email,undefined);
+  }
+  assert.equal((await read('city='+encodeURIComponent('台北市'))).total,1);
+  assert.equal((await request('/api/venues?city=unknown')).status,400);
+  const {id}=await (await request('/api/venues','POST',{...submission,city:'金門縣',district:'金城鎮',address:'金門縣金城鎮測試路 100 號'})).json() as any;
+  assert.equal((await request(`/api/admin/venues/${id}`,'PATCH',{version:1,status:'approved',moderation_note:'修正場地位置並查核',venue:{...venue,city:'連江縣',district:'南竿鄉',address:'連江縣南竿鄉測試路 100 號'}})).status,200);
+  const data=await read('city='+encodeURIComponent('連江縣'));assert.equal(data.total,1);assert.equal(data.venues[0].district,'南竿鄉');
+});
