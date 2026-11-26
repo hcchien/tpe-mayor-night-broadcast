@@ -1,0 +1,13 @@
+# Copy to .dev.vars for LOCAL development only. Never deploy these values.
+ENVIRONMENT=development
+SITE_ORIGIN=http://127.0.0.1:8787
+LOCAL_DEV_AUTH=true
+# The local Google login button creates a mock merchant session (no Google credentials).
+# Production requires GOOGLE_CLIENT_ID in wrangler.jsonc and GOOGLE_CLIENT_SECRET as a secret.
+TURNSTILE_SITE_KEY=1x00000000000000000000AA
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+IP_HASH_SECRET=local-only-replace-with-random-secret-for-production
+REGISTRATION_OPEN=true
+ORGANIZER_NAME=本機測試主辦單位
+CONTACT_EMAIL=local@example.com
+PRIVACY_DELETE_AFTER=2099-12-31

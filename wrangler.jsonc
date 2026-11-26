@@ -1,0 +1,39 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tpe-mayor-night-broadcast",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-11",
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/admin", "/admin/*"]
+  },
+  "d1_databases": [{
+    "binding": "DB", "database_name": "tpe-mayor-night-broadcast",
+    "database_id": "00000000-0000-0000-0000-000000000000",
+    "migrations_dir": "migrations"
+  }],
+  "ratelimits": [
+    {"name": "WRITE_LIMITER", "namespace_id": "1001", "simple": {"limit": 5, "period": 60}},
+    {"name": "READ_LIMITER", "namespace_id": "1002", "simple": {"limit": 120, "period": 60}}
+  ],
+  "triggers": {"crons": ["17 19 * * *"]},
+  "vars": {
+    "ENVIRONMENT": "production",
+    "SITE_ORIGIN": "https://replace-me.example.com",
+    "ACCESS_TEAM_DOMAIN": "replace-me.cloudflareaccess.com",
+    "ACCESS_AUD": "replace-me",
+    "TURNSTILE_SITE_KEY": "",
+    "GOOGLE_CLIENT_ID": "",
+    "REGISTRATION_OPEN": "false",
+    "DAILY_SUBMISSION_LIMIT": "200",
+    "EVENT_LABEL": "台北市長選前之夜",
+    "EVENT_TIME": "活動時間與直播資訊將由主辦單位公布",
+    "LIVESTREAM_URL": "",
+    "CONTACT_EMAIL": "",
+    "ORGANIZER_NAME": "",
+    "PRIVACY_DELETE_AFTER": ""
+  }
+}
