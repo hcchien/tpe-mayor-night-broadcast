@@ -1,6 +1,6 @@
-import { $, el, api, externalLink, options, venueFields, readVenue, showError, challenge } from './shared.js';
+import { $, el, api, externalLink, options, venueFields, readVenue, showError, challenge, locationSelects } from './shared.js';
 let config;let registerChallenge;let reportChallenge;let reportVenueId='';let currentPage=1;let requestNumber=0;
-let merchant=null;
+let merchant=null;let refreshSearchDistrict;
 const authMessage=$('#merchant-message');
 $('#google-login').addEventListener('click',async()=>{
   const button=$('#google-login');button.disabled=true;authMessage.textContent='正在前往登入…';
@@ -56,7 +56,7 @@ async function loadVenues(page=1) {
   }catch(error){if(seq!==requestNumber)return;$('#venue-count').textContent='暫時無法載入';$('#venue-grid').replaceChildren();$('#pagination').replaceChildren();$('#directory-message').replaceChildren(el('div',{class:'empty-state'},el('h3',{},'場地資訊暫時無法載入'),el('p',{class:'error'},error.message),el('button',{class:'button secondary',onClick:()=>loadVenues(currentPage)},'重新載入')));}finally{if(seq===requestNumber)$('#venue-grid').removeAttribute('aria-busy');}
 }
 $('#search-form').addEventListener('submit',e=>{e.preventDefault();loadVenues();});
-$('#search-form').addEventListener('reset',()=>setTimeout(()=>loadVenues(),0));
+$('#search-form').addEventListener('reset',()=>setTimeout(()=>{refreshSearchDistrict?.();loadVenues();},0));
 async function openReport(venue){
   reportVenueId=venue.id;$('#report-form').reset();$('#report-message').textContent='';$('#report-venue').textContent=venue.name;$('#report-dialog').showModal();
   try{if(!reportChallenge)reportChallenge=await challenge($('#report-turnstile'),config,'report');else reportChallenge.reset();}catch(error){showError($('#report-message'),error);}
@@ -83,7 +83,8 @@ async function init(){
   await loadVenuesFromUrl();
   try{
     config=await api('/api/config');options($('#city-filter'),config.cities);options($('#category-filter'),config.categories);
-    const params=new URLSearchParams(location.search);for(const key of ['city','district','category'])if(params.get(key))$('#search-form').elements[key].value=params.get(key);
+    const params=new URLSearchParams(location.search);for(const key of ['city','category'])if(params.get(key))$('#search-form').elements[key].value=key==='city'?params.get(key).replace(/^台/,'臺'):params.get(key);
+    refreshSearchDistrict=locationSelects(config,$('#city-filter'),$('#district-filter'),{optional:true,selected:(params.get('district')||'').replace(/台/g,'臺')});
     $('#event-time').textContent=config.eventTime;$('#organizer').textContent=config.organizerName?`主辦／資料管理：${config.organizerName}`:'';
     if(config.contactEmail){$('#contact-link').hidden=false;$('#contact-link').href='mailto:'+encodeURIComponent(config.contactEmail);}
     if(config.livestreamUrl){const link=externalLink('前往官方直播 ↗',config.livestreamUrl,'text-link');if(link)$('#livestream').replaceWith(link);}

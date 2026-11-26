@@ -25,13 +25,25 @@ export function externalLink(text, url, className = 'button secondary') {
   const href = safeUrl(url); return href ? el('a',{href,target:'_blank',rel:'noopener noreferrer',class:className},text) : null;
 }
 export function options(select, values) { for (const value of values) select.append(el('option',{value},value)); }
+export function locationSelects(config, city, district, {optional=false, selected=''} = {}) {
+  function refresh(value='') {
+    const list=Object.hasOwn(config.districtsByCity,city.value)?config.districtsByCity[city.value]:[];
+    const label=!city.value?'請先選擇縣市':optional?'所有鄉鎮市區':value&&!list.includes(value)?`原資料「${value}」無法配對，請重新選擇`:'請選擇鄉鎮市區';
+    district.replaceChildren(el('option',{value:''},label));options(district,list);
+    district.value=list.includes(value)?value:'';district.disabled=!city.value;
+    // Search reset must not resurrect the value restored from the URL.
+    for(const option of district.options)option.defaultSelected=false;
+  }
+  city.addEventListener('change',()=>refresh());refresh(selected);
+  return refresh;
+}
 export const fieldNames = { name:'店家／場地名稱', city:'縣市', district:'鄉鎮市區', category:'場地類型', address:'完整地址', capacity:'預計容納人數', screen:'螢幕與音響設備', opening_time:'當天開放時間', cost:'消費與入場方式', description:'場地介紹與參與須知', booking_url:'店家公開網站或預約連結', accessible:'提供無階梯入口', contact_name:'聯絡人姓名', contact_email:'聯絡 Email', contact_phone:'聯絡電話' };
 export function venueFields(config, value = {}, privateFields = false, prefix = '') {
   const grid = el('div',{class:'field-grid'});
   const specs = privateFields ? [
     ['contact_name','text',80,true],['contact_email','email',254,true],['contact_phone','tel',30,true]
   ] : [
-    ['name','text',80,true],['city','select'],['district','text',10],['category','select'],['address','text',200,true],
+    ['name','text',80,true],['city','select'],['district','select'],['category','select'],['address','text',200,true],
     ['capacity','number'],['screen','text',120],['opening_time','text',120],['cost','text',200,true],
     ['description','textarea',1500,true],['booking_url','url',500,true],['accessible','checkbox',0,true]
   ];
@@ -43,10 +55,9 @@ export function venueFields(config, value = {}, privateFields = false, prefix = 
     } else {
       label.append(el('span',{},fieldNames[name] + (name === 'booking_url' ? '（選填）' : ' *')));
       const input = type === 'select' ? el('select',{name,id:prefix+name,required:true}) : type === 'textarea' ? el('textarea',{name,id:prefix+name,rows:4,required:true,maxlength:max,minlength:10}) : el('input',{name,id:prefix+name,type,required:name !== 'booking_url',maxlength:max,placeholder:placeholders[name],autocomplete:privateFields ? {contact_name:'name',contact_email:'email',contact_phone:'tel'}[name] : 'off'});
-      if (type === 'select') { input.append(el('option',{value:''},'請選擇')); options(input,name === 'city' ? config.cities : config.categories); }
+      if (type === 'select') { input.append(el('option',{value:''},'請選擇')); options(input,name === 'city' ? config.cities : name === 'category' ? config.categories : []); }
       if (type === 'number') { input.min='1';input.max='5000';input.step='1'; }
       if (['name','screen','opening_time'].includes(name)) input.minLength=2;
-      if (name === 'district') { input.minLength=2; input.pattern='[\\p{Script=Han}]+[鄉鎮市區]'; }
       if (name === 'address') input.minLength=5;
       if (name === 'contact_phone') input.minLength=6;
       if (value[name] != null) input.value=value[name];
@@ -56,6 +67,7 @@ export function venueFields(config, value = {}, privateFields = false, prefix = 
     }
     grid.append(label);
   }
+  if(!privateFields)locationSelects(config,$('[name=city]',grid),$('[name=district]',grid),{selected:value.district||''});
   return grid;
 }
 export function readVenue(form) {

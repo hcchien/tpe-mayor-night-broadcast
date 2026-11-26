@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { districtsByCity, validLocation } from './locations';
 import { categories, cities, citySchema, districtSchema, publicColumns, reportSchema, reviewSchema, submissionSchema, venueColumns } from './schema';
 import { HttpError, localDevelopment, rateLimit, readJson, requireOrigin, securityHeaders, verifyTurnstile } from './security';
 import type { Env } from './types';
@@ -18,12 +19,13 @@ async function publicVenues(req: Request, env: Env, ctx: ExecutionContext) {
   const url = new URL(req.url);
   const cityValue = url.searchParams.get('city') || '';
   const city = cityValue ? citySchema.parse(cityValue) : '';
-  const district = (url.searchParams.get('district') || '').trim();
+  const districtValue = (url.searchParams.get('district') || '').trim();
+  const district = districtValue ? districtSchema.parse(districtValue) : '';
   const category = url.searchParams.get('category') || '';
   const q = (url.searchParams.get('q') || '').trim();
   const page = Number(url.searchParams.get('page') || 1);
   const accessible = url.searchParams.get('accessible') === '1';
-  if ((district && !districtSchema.safeParse(district).success) ||
+  if ((city && district && !validLocation(city,district)) ||
     (category && !categories.includes(category as typeof categories[number])) || q.length > 60 || !Number.isInteger(page) || page < 1 || page > 1000) {
     throw new HttpError(400, '查詢條件不正確。');
   }
@@ -90,7 +92,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     contactEmail: env.CONTACT_EMAIL, organizerName: env.ORGANIZER_NAME,
     deleteAfter: env.PRIVACY_DELETE_AFTER, registrationOpen: registrationOpen(env),
     googleLoginAvailable:googleLoginConfigured(req,env),
-    turnstileSiteKey: env.TURNSTILE_SITE_KEY, localDevelopment: localDevelopment(req,env), cities, categories
+    turnstileSiteKey: env.TURNSTILE_SITE_KEY, localDevelopment: localDevelopment(req,env), cities, districtsByCity, categories
   });
   if (path === '/api/venues' && req.method === 'GET') return publicVenues(req,env,ctx);
   if (path === '/api/venues' && req.method === 'POST') {

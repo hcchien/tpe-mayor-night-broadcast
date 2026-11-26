@@ -117,3 +117,18 @@ test('city and district filters distinguish same-name districts and admin edits 
   assert.equal((await request(`/api/admin/venues/${id}`,'PATCH',{version:1,status:'approved',moderation_note:'修正場地位置並查核',venue:{...venue,city:'連江縣',district:'南竿鄉',address:'連江縣南竿鄉測試路 100 號'}})).status,200);
   const data=await read('city='+encodeURIComponent('連江縣'));assert.equal(data.total,1);assert.equal(data.venues[0].district,'南竿鄉');
 });
+
+test('mismatched city and district are rejected for intake, editing and search without writes',async()=>{
+  const {env,request}=client();
+  assert.equal((await request('/api/venues','POST',{...submission,city:'花蓮縣',district:'中正區'})).status,400);
+  assert.equal((env.DB as any).sql.prepare('SELECT COUNT(*) n FROM venues').get().n,0);
+  const {id}=await (await request('/api/venues','POST',submission)).json() as any;
+  assert.equal((await request(`/api/admin/venues/${id}`,'PATCH',{version:1,status:'approved',moderation_note:'測試不相符的行政區',venue:{...venue,city:'臺北市',district:'吉安鄉'}})).status,400);
+  const row=(env.DB as any).sql.prepare('SELECT city,district,status,version FROM venues WHERE id=?').get(id);
+  assert.deepEqual({...row},{city:venue.city,district:venue.district,status:'pending',version:1});
+  assert.equal((env.DB as any).sql.prepare('SELECT COUNT(*) n FROM audit_log').get().n,0);
+  assert.equal((await request('/api/venues?'+new URLSearchParams({city:'臺北市',district:'吉安鄉'}))).status,400);
+  const config=await (await request('/api/config')).json() as any;
+  assert.equal(config.districtsByCity['花蓮縣'].includes('吉安鄉'),true);
+  assert.equal(config.districtsByCity['臺北市'].includes('吉安鄉'),false);
+});

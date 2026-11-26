@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
+import { districtsByCity } from '../src/locations';
 import { cities, submissionSchema } from '../src/schema';
 import { submission, venue } from './support';
 
@@ -26,4 +27,15 @@ test('nationwide migration preserves existing venue content and defaults its cit
     assert.equal(row.city,'臺北市');
     for(const [key,value] of Object.entries(fields))assert.equal(row[key],value);
   }finally{db.close();}
+});
+
+test('official district snapshot covers all cities and rejects mismatched locations',()=>{
+  assert.deepEqual(Object.keys(districtsByCity).sort(),[...cities].sort());
+  assert.equal(Object.values(districtsByCity).flat().length,368);
+  for(const [city,districts] of Object.entries(districtsByCity)) {
+    assert.equal(new Set(districts).size,districts.length);
+    for(const district of districts)assert.equal(submissionSchema.safeParse({...submission,city,district}).success,true);
+  }
+  for(const [city,district] of [['臺北市','吉安鄉'],['花蓮縣','中正區'],['金門縣','南竿鄉'],['臺北市','不存在區']])assert.equal(submissionSchema.safeParse({...submission,city,district}).success,false);
+  assert.equal(submissionSchema.parse({...submission,city:'雲林縣',district:'台西鄉'}).district,'臺西鄉');
 });
