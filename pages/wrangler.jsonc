@@ -1,0 +1,8 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "tpe-mayor-night-broadcast",
+  "pages_build_output_dir": "./gateway",
+  "compatibility_date": "2026-09-11",
+  "services": [{"binding": "APP", "service": "tpe-mayor-night-broadcast"}],
+  "vars": {"ALLOWED_ORIGIN": "https://tpe-mayor.thecocoa.cool"}
+}
