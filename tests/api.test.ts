@@ -86,3 +86,14 @@ test('admin UI redirects anonymous users to login while APIs reject forged ident
     assert.equal(r.status,401);
   }
 });
+
+test('delete returns success with cascading reports and rejects stale versions without extra audit rows',async()=>{
+  const {env,request}=client();const {id}=await (await request('/api/venues','POST',submission)).json() as any;
+  await request(`/api/admin/venues/${id}`,'PATCH',{version:1,status:'approved',moderation_note:'確認店家授權'});
+  for(let i=0;i<2;i++)assert.equal((await request('/api/reports','POST',{venue_id:id,reason:'請確認店家的開放時間。',website:'',turnstile_token:'local-development'})).status,201);
+  assert.equal((await request(`/api/admin/venues/${id}`,'DELETE',{version:1})).status,409);
+  assert.equal((await request(`/api/admin/venues/${id}`,'DELETE',{version:2})).status,200);
+  assert.equal((env.DB as any).sql.prepare('SELECT COUNT(*) n FROM reports').get().n,0);
+  assert.equal((await request(`/api/admin/venues/${id}`,'DELETE',{version:2})).status,409);
+  assert.equal((env.DB as any).sql.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='venue:delete'").get().n,1);
+});

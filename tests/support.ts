@@ -12,7 +12,7 @@ export function database() {
     bind(...params:any[]){const copy=new Statement(this.query);copy.params=params;return copy;}
     async first(){return sql.prepare(this.query).get(...this.params)||null;}
     async all(){return {results:sql.prepare(this.query).all(...this.params),success:true,meta:{}};}
-    async run(){const r=sql.prepare(this.query).run(...this.params);return {results:[],success:true,meta:{changes:Number(r.changes)}};}
+    async run(){if(/\bRETURNING\b/i.test(this.query)){const results=sql.prepare(this.query).all(...this.params);return {results,success:true,meta:{changes:results.length}};}const r=sql.prepare(this.query).run(...this.params);return {results:[],success:true,meta:{changes:Number(r.changes)}};}
   }
   return {sql,prepare:(q:string)=>new Statement(q),async batch(statements:Statement[]){sql.exec('BEGIN');try{const result=[];for(const s of statements){result.push(/^\s*SELECT/i.test(s.query)?await s.all():await s.run());}sql.exec('COMMIT');return result;}catch(e){sql.exec('ROLLBACK');throw e;}}};
 }
