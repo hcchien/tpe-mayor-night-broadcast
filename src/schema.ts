@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
-export const districts = ['中正區','大同區','中山區','松山區','大安區','萬華區','信義區','士林區','北投區','內湖區','南港區','文山區'] as const;
+export const cities = ['臺北市','新北市','桃園市','臺中市','臺南市','高雄市','基隆市','新竹市','嘉義市','新竹縣','苗栗縣','彰化縣','南投縣','雲林縣','嘉義縣','屏東縣','宜蘭縣','花蓮縣','臺東縣','澎湖縣','金門縣','連江縣'] as const;
+export const citySchema = z.preprocess(v => typeof v === 'string' ? v.trim().replace(/^台/, '臺') : v, z.enum(cities));
+export const districtSchema = z.string().trim().min(2).max(10).regex(/^[\p{Script=Han}]+[鄉鎮市區]$/u, '請填寫鄉鎮市區，例如中正區、竹北市或吉安鄉');
 export const categories = ['餐廳','咖啡廳','酒吧','共享空間','其他場地'] as const;
 const text = (min: number, max: number) => z.string().trim().min(min).max(max).refine(v => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(v), '包含不允許的控制字元');
 export const httpsUrl = z.string().trim().max(500).refine(v => {
@@ -8,7 +10,7 @@ export const httpsUrl = z.string().trim().max(500).refine(v => {
   try { const u = new URL(v); return u.protocol === 'https:' && !u.username && !u.password; } catch { return false; }
 }, '請使用完整的 HTTPS 網址');
 export const venueSchema = z.object({
-  name: text(2, 80), district: z.enum(districts), category: z.enum(categories),
+  name: text(2, 80), city: citySchema, district: districtSchema, category: z.enum(categories),
   address: text(5, 200), capacity: z.number().int().min(1).max(5000),
   screen: text(2, 120), opening_time: text(2, 120), cost: text(1, 200),
   description: text(10, 1500), booking_url: httpsUrl,
@@ -30,4 +32,4 @@ export const reviewSchema = z.object({
 }).strict();
 export type VenueInput = z.infer<typeof venueSchema>;
 export const venueColumns = Object.keys(venueSchema.shape) as (keyof VenueInput)[];
-export const publicColumns = 'id,name,district,category,address,capacity,screen,opening_time,cost,description,booking_url,accessible,updated_at';
+export const publicColumns = 'id,name,city,district,category,address,capacity,screen,opening_time,cost,description,booking_url,accessible,updated_at';
