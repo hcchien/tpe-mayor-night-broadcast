@@ -132,3 +132,31 @@ test('mismatched city and district are rejected for intake, editing and search w
   assert.equal(config.districtsByCity['花蓮縣'].includes('吉安鄉'),true);
   assert.equal(config.districtsByCity['臺北市'].includes('吉安鄉'),false);
 });
+
+test('event selection persists, filters both nights, validates input and supports moderation edits',async()=>{
+  const {env,request}=client();
+  const combinations=[['election_eve'],['counting_night'],['counting_night','election_eve']];
+  const ids:string[]=[];
+  for(const events of combinations) {
+    const r=await request('/api/venues','POST',{...submission,events});assert.equal(r.status,201);const {id}=await r.json() as any;ids.push(id);
+    await request(`/api/admin/venues/${id}`,'PATCH',{version:1,status:'approved',moderation_note:'已查核參與活動'});
+  }
+  const read=async(event='')=>await (await request('/api/venues'+(event?'?event='+event:''))).json() as any;
+  assert.equal((await read()).total,3);
+  for(const event of ['election_eve','counting_night']) {
+    const data=await read(event);assert.equal(data.total,2);
+    for(const row of data.venues)assert.equal(row.events.includes(event),true);
+  }
+  const both=(await read()).venues.find((v:any)=>v.id===ids[2]);assert.deepEqual(both.events,['election_eve','counting_night']);
+  assert.equal((await request('/api/admin/venues/'+ids[2],'PATCH',{version:2,status:'approved',moderation_note:'更改為只參與開票之夜',venue:{...venue,events:['counting_night']}})).status,200);
+  assert.equal((await read('election_eve')).total,1);assert.equal((await read('counting_night')).total,2);
+  for(const events of [[],undefined,['other'],['election_eve','election_eve'],'counting_night']) {
+    assert.equal((await request('/api/venues','POST',{...submission,events})).status,400);
+    assert.equal((await request('/api/admin/venues/'+ids[0],'PATCH',{version:2,status:'approved',moderation_note:'測試無效活動選擇',venue:{...venue,events}})).status,400);
+  }
+  assert.equal((await request('/api/venues?event=unknown')).status,400);
+  assert.equal((env.DB as any).sql.prepare('SELECT COUNT(*) n FROM venues').get().n,3);
+  assert.equal((env.DB as any).sql.prepare('SELECT COUNT(*) n FROM audit_log').get().n,4);
+  const admin=await (await request('/api/admin/venues?status=approved')).json() as any;
+  assert.deepEqual(admin.venues.find((v:any)=>v.id===ids[2]).events,['counting_night']);
+});
