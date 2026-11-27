@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "tpe-mayor-night-broadcast",
+  "name": "tpe-mayor-night-broadcast-local",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-11",
   "workers_dev": false,
@@ -13,8 +13,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "tpe-mayor-night-broadcast",
-      "database_id": "6b1dd427-7644-46ca-b7ce-d6e05dccf74c",
+      "database_name": "tpe-mayor-night-broadcast-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
   ],
@@ -36,17 +36,12 @@
       }
     }
   ],
-  "triggers": {
-    "crons": [
-      "17 19 * * *"
-    ]
-  },
   "vars": {
-    "ENVIRONMENT": "production",
-    "SITE_ORIGIN": "https://tpe-mayor.thecocoa.cool",
-    "TURNSTILE_SITE_KEY": "0x4AAAAAAGUE62du4GLrFddS",
-    "GOOGLE_CLIENT_ID": "448719938843-chctk3c8ur7ftvsnb3ebcjtdcq12hiri.apps.googleusercontent.com",
-    "REGISTRATION_OPEN": "true",
+    "ENVIRONMENT": "development",
+    "SITE_ORIGIN": "http://127.0.0.1:8787",
+    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
+    "GOOGLE_CLIENT_ID": "",
+    "REGISTRATION_OPEN": "false",
     "DAILY_SUBMISSION_LIMIT": "200",
     "EVENT_LABEL": "台北市長選前之夜",
     "EVENT_TIME": "活動時間與直播資訊將由主辦單位公布",
