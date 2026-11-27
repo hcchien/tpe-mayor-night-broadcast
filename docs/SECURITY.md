@@ -1,5 +1,7 @@
 # 安全設計與已知限制
 
+> Cloudflare 正式服務已於 2026-11-27 下架。以下保留程式設計與測試說明，不代表目前存在線上服務；狀態見 [下架紀錄](DEPLOYMENT.md)。
+
 ## 信任邊界
 
 | 入口 | 驗證與權限 | 資料 |
@@ -39,7 +41,7 @@ Google 登入證明有人控制該 Google 帳號，不能證明登記人擁有�
 
 `npm test` 驗證 Google 偽造簽章／錯 issuer／錯 aud／過期／非管理者被拒絕；CSRF、超大 body、Turnstile hostname/action、欄位注入、非 HTTPS 連結、每日上限、私人欄位不公開、SQL LIKE 注入、審核版本衝突、完整 CRUD 與保存到期刪除。
 
-`npm run test:e2e` 驗證桌面／手機登記與管理流程、字串 XSS 渲染與基本無水平溢出。這些測試不替代正式管理員允許名單、真實 Turnstile、Cloudflare binding、DNS 與負載測試，正式環境仍需依 DEPLOYMENT.md 驗收。
+`npm run test:e2e` 驗證桌面／手機登記與管理流程、字串 XSS 渲染與基本無水平溢出。這些測試不替代正式管理員允許名單、真實 Turnstile、Cloudflare binding、DNS 與負載測試，若未來重新上線，需為新環境另訂驗收程序。
 
 `tests/merchant-auth.test.ts` 額外驗證 Google JWT 錯誤簽章／issuer／aud／azp／nonce／期限、一次性 state、PKCE、瀏覽器綁定、code exchange 到 Session 的完整流程（Google HTTP 回應以測試金鑰模擬）、登出撤銷、Email 冒用被拒絕、Google 登入無法提升為管理員、跨 Session 帳號限額與個資清除。CI 的 Google UI 是明確標記的本機 mock，不能宣稱已測過真實 Google 同意頁。
 
